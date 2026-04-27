@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NYC Crime Data Explorer</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --white:      #ffffff;
+      --gray-50:    #f8f9fa;
+      --gray-100:   #f1f3f5;
+      --gray-200:   #e9ecef;
+      --gray-300:   #dee2e6;
+      --gray-400:   #ced4da;
+      --gray-500:   #adb5bd;
+      --gray-600:   #6c757d;
+      --gray-700:   #495057;
+      --gray-800:   #343a40;
+      --gray-900:   #212529;
+      --blue:       #1864ab;
+      --blue-light: #e7f5ff;
+      --felony:     #c0392b;
+      --misdem:     #2980b9;
+      --violat:     #27ae60;
+      --sidebar-w:  320px;
+      --header-h:   48px;
+    }
+
+    html, body { height: 100%; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; color: var(--gray-900); background: var(--white); }
+
+    /* HEADER */
+    #header {
+      height: var(--header-h);
+      background: var(--white);
+      border-bottom: 2px solid var(--gray-900);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 16px;
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 1000;
+    }
+    #header h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.2px; white-space: nowrap; }
+    #header .divider { width: 1px; height: 20px; background: var(--gray-300); }
+    #header .source { font-size: 11px; color: var(--gray-600); font-family: 'IBM Plex Mono', monospace; }
+    #header .count {
+      margin-left: auto;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      color: var(--gray-700);
+      background: var(--gray-100);
+      padding: 3px 8px;
+      border-radius: 3px;
+      border: 1px solid var(--gray-300);
+    }
+
+    /* LAYOUT */
+    #app { display: flex; height: 100vh; padding-top: var(--header-h); }
+
+    /* SIDEBAR */
+    #sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      background: var(--white);
+      border-right: 1px solid var(--gray-300);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel { border-bottom: 1px solid var(--gray-200); padding: 14px 16px; }
+    .ptitle {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: var(--gray-600);
+      margin-bottom: 10px;
+    }
+
+    /* STAT STRIP */
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .stat-box { background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 4px; padding: 8px 10px; }
+    .stat-box .num { font-family: 'IBM Plex Mono', monospace; font-size: 18px; font-weight: 500; line-height: 1; }
+    .stat-box .lbl { font-size: 10px; color: var(--gray-600); margin-top: 3px; }
+    .stat-box.red .num  { color: var(--felony); }
+    .stat-box.blue .num { color: var(--misdem); }
+
+    /* FORM */
+    .field { margin-bottom: 10px; }
+    .field:last-child { margin-bottom: 0; }
+    .field label { display: block; font-size: 11px; font-weight: 500; color: var(--gray-700); margin-bottom: 4px; }
+    .field select, .field input {
+      width: 100%;
+      padding: 6px 8px;
+      font-family: 'IBM Plex Sans', sans-serif;
+      font-size: 13px;
+      color: var(--gray-900);
+      background: var(--white);
+      border: 1px solid var(--gray-400);
+      border-radius: 3px;
+      outline: none;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+    .field select:focus, .field input:focus { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(24,100,171,.12); }
+    .sw { position: relative; }
+    .sw::after { content:'▾'; position:absolute; right:8px; top:50%; transform:translateY(-50%); pointer-events:none; font-size:10px; color:var(--gray-500); }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+    /* BUTTONS */
+    .btn-row { display: flex; gap: 6px; margin-top: 12px; }
+    .btn { padding: 7px 14px; font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 500; border-radius: 3px; border: 1px solid transparent; cursor: pointer; transition: background .1s; }
+    .btn-primary { background: var(--gray-900); color: var(--white); flex: 1; }
+    .btn-primary:hover { background: var(--gray-800); }
+    .btn-primary:disabled { background: var(--gray-400); cursor: not-allowed; }
+    .btn-ghost { background: var(--white); color: var(--gray-700); border-color: var(--gray-300); }
+    .btn-ghost:hover { background: var(--gray-50); border-color: var(--gray-500); }
+    .btn-census { width: 100%; margin-top: 8px; background: var(--blue-light); color: var(--blue); border-color: #a5d8ff; }
+    .btn-census:hover { background: #d0ebff; }
+
+    /* LEGEND */
+    .legend { display: flex; flex-direction: column; gap: 5px; }
+    .legend-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+    .swatch { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+
+    /* CENSUS TABLE */
+    .ctable { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .ctable td { padding: 4px 0; border-bottom: 1px solid var(--gray-100); }
+    .ctable td:first-child { color: var(--gray-600); }
+    .ctable td:last-child { text-align: right; font-family: 'IBM Plex Mono', monospace; font-weight: 500; }
+    .ctable tr:last-child td { border-bottom: none; }
+    .cempty { font-size: 12px; color: var(--gray-500); font-style: italic; }
+
+    /* RESULTS LIST */
+    #results-list { flex: 1; overflow-y: auto; }
+    .ri { padding: 10px 16px; border-bottom: 1px solid var(--gray-100); cursor: pointer; transition: background .1s; }
+    .ri:hover { background: var(--gray-50); }
+    .ri-off { font-size: 12px; font-weight: 500; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ri-meta { font-size: 11px; color: var(--gray-600); display: flex; gap: 10px; align-items: center; }
+    .badge { font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 2px; text-transform: uppercase; }
+    .b-FELONY      { background:#fdecea; color:var(--felony); }
+    .b-MISDEMEANOR { background:#ebf5fb; color:var(--misdem); }
+    .b-VIOLATION   { background:#eafaf1; color:var(--violat); }
+
+    /* MAP */
+    #map-wrap { flex: 1; position: relative; }
+    #map { width: 100%; height: 100%; }
+
+    /* LOADING */
+    #loading { display:none; position:absolute; inset:0; background:rgba(255,255,255,.8); z-index:800; align-items:center; justify-content:center; flex-direction:column; gap:10px; }
+    #loading.on { display:flex; }
+    .spinner { width:30px; height:30px; border:3px solid var(--gray-200); border-top-color:var(--gray-900); border-radius:50%; animation:spin .7s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    #loading p { font-size:12px; color:var(--gray-600); font-family:'IBM Plex Mono',monospace; }
+
+    /* POPUP */
+    .leaflet-popup-content-wrapper { border-radius:4px; border:1px solid var(--gray-300); box-shadow:0 4px 16px rgba(0,0,0,.12); padding:0; overflow:hidden; }
+    .leaflet-popup-content { margin:0 !important; width:240px !important; }
+    .ph { padding:8px 12px; font-weight:600; font-size:12px; border-bottom:1px solid var(--gray-200); }
+    .ph.FELONY      { background:#fdecea; color:var(--felony); }
+    .ph.MISDEMEANOR { background:#ebf5fb; color:var(--misdem); }
+    .ph.VIOLATION   { background:#eafaf1; color:var(--violat); }
+    .ph.UNKNOWN     { background:var(--gray-100); color:var(--gray-700); }
+    .pb { padding:8px 12px; font-size:12px; }
+    .pr { display:flex; justify-content:space-between; padding:2px 0; }
+    .pr .k { color:var(--gray-600); }
+    .pr .v { color:var(--gray-900); font-weight:500; text-align:right; max-width:140px; }
+    .ps { border:none; border-top:1px solid var(--gray-200); margin:5px 0; }
+
+    /* TOAST */
+    #toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(8px); background:var(--gray-900); color:var(--white); padding:8px 16px; border-radius:4px; font-size:12px; opacity:0; transition:opacity .2s,transform .2s; pointer-events:none; z-index:9999; font-family:'IBM Plex Mono',monospace; }
+    #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+    #sidebar::-webkit-scrollbar, #results-list::-webkit-scrollbar { width:4px; }
+    #sidebar::-webkit-scrollbar-thumb, #results-list::-webkit-scrollbar-thumb { background:var(--gray-300); }
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <h1>NYC Crime Data Explorer</h1>
+  <div class="divider"></div>
+  <span class="source">NYPD Complaint Data · US Census ACS 2022</span>
+  <div class="count" id="hcount">No data loaded</div>
+</div>
+
+<div id="app">
+  <div id="sidebar">
+
+    <!-- STATS -->
+    <div class="panel">
+      <div class="ptitle">Summary</div>
+      <div class="stats-grid">
+        <div class="stat-box"><div class="num" id="s-tot">—</div><div class="lbl">Total</div></div>
+        <div class="stat-box red"><div class="num" id="s-fel">—</div><div class="lbl">Felonies</div></div>
+        <div class="stat-box blue"><div class="num" id="s-mis">—</div><div class="lbl">Misdem.</div></div>
+      </div>
+    </div>
+
+    <!-- FILTERS -->
+    <div class="panel">
+      <div class="ptitle">Filters</div>
+
+      <div class="field">
+        <label>Borough</label>
+        <div class="sw"><select id="f-boro">
+          <option value="">All Boroughs</option>
+          <option>BRONX</option><option>BROOKLYN</option>
+          <option>MANHATTAN</option><option>QUEENS</option>
+          <option>STATEN ISLAND</option>
+        </select></div>
+      </div>
+
+      <div class="field">
+        <label>Severity</label>
+        <div class="sw"><select id="f-sev">
+          <option value="">All Levels</option>
+          <option value="FELONY">Felony</option>
+          <option value="MISDEMEANOR">Misdemeanor</option>
+          <option value="VIOLATION">Violation</option>
+        </select></div>
+      </div>
+
+      <div class="row2">
+        <div class="field">
+          <label>Victim Race</label>
+          <div class="sw"><select id="f-vrace">
+            <option value="">All</option>
+            <option value="WHITE">White</option>
+            <option value="BLACK">Black</option>
+            <option value="WHITE HISPANIC">W. Hispanic</option>
+            <option value="BLACK HISPANIC">B. Hispanic</option>
+            <option value="ASIAN / PACIFIC ISLANDER">Asian/PI</option>
+            <option value="AMERICAN INDIAN/ALASKAN NATIVE">Am. Indian</option>
+            <option value="UNKNOWN">Unknown</option>
+          </select></div>
+        </div>
+        <div class="field">
+          <label>Victim Sex</label>
+          <div class="sw"><select id="f-vsex">
+            <option value="">All</option>
+            <option value="F">Female</option>
+            <option value="M">Male</option>
+          </select></div>
+        </div>
+      </div>
+
+      <div class="row2">
+        <div class="field">
+          <label>Suspect Race</label>
+          <div class="sw"><select id="f-srace">
+            <option value="">All</option>
+            <option value="WHITE">White</option>
+            <option value="BLACK">Black</option>
+            <option value="WHITE HISPANIC">W. Hispanic</option>
+            <option value="BLACK HISPANIC">B. Hispanic</option>
+            <option value="ASIAN / PACIFIC ISLANDER">Asian/PI</option>
+            <option value="AMERICAN INDIAN/ALASKAN NATIVE">Am. Indian</option>
+            <option value="UNKNOWN">Unknown</option>
+          </select></div>
+        </div>
+        <div class="field">
+          <label>Suspect Sex</label>
+          <div class="sw"><select id="f-ssex">
+            <option value="">All</option>
+            <option value="F">Female</option>
+            <option value="M">Male</option>
+          </select></div>
+        </div>
+      </div>
+
+      <div class="row2">
+        <div class="field"><label>Year From</label><input type="number" id="f-yr1" value="2023" min="2006" max="2024"/></div>
+        <div class="field"><label>Year To</label><input type="number" id="f-yr2" value="2024" min="2006" max="2024"/></div>
+      </div>
+
+      <div class="field">
+        <label>Offense keyword</label>
+        <input type="text" id="f-kw" placeholder="assault, robbery, larceny…"/>
+      </div>
+
+      <div class="field">
+        <label>Max results</label>
+        <div class="sw"><select id="f-lim">
+          <option value="500">500 (fast)</option>
+          <option value="1000" selected>1,000</option>
+          <option value="2500">2,500</option>
+          <option value="5000">5,000 (slow)</option>
+        </select></div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-run" onclick="loadData()">Load Data</button>
+        <button class="btn btn-ghost" onclick="resetFilters()">Reset</button>
+      </div>
+    </div>
+
+    <!-- LEGEND -->
+    <div class="panel">
+      <div class="ptitle">Severity</div>
+      <div class="legend">
+        <div class="legend-row"><div class="swatch" style="background:var(--felony)"></div><span>Felony</span></div>
+        <div class="legend-row"><div class="swatch" style="background:var(--misdem)"></div><span>Misdemeanor</span></div>
+        <div class="legend-row"><div class="swatch" style="background:var(--violat)"></div><span>Violation</span></div>
+      </div>
+    </div>
+
+    <!-- CENSUS -->
+    <div class="panel">
+      <div class="ptitle">Census Controls — ACS 2022</div>
+      <div id="cbody"><p class="cempty">Select a borough and click Load Census.</p></div>
+      <button class="btn btn-census" onclick="loadCensus()">Load Census Data</button>
+    </div>
+
+    <!-- LIST HEADER -->
+    <div class="panel" style="border-bottom:none; padding-bottom:0;">
+      <div class="ptitle">Recent Incidents <span id="ri-cnt" style="font-weight:400;text-transform:none;letter-spacing:0;"></span></div>
+    </div>
+    <div id="results-list"></div>
+
+  </div>
+
+  <!-- MAP -->
+  <div id="map-wrap">
+    <div id="map"></div>
+    <div id="loading">
+      <div class="spinner"></div>
+      <p id="lmsg">Loading…</p>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map = L.map('map', { center:[40.72,-73.99], zoom:11, preferCanvas:true });
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution:'© OpenStreetMap contributors © CARTO',
+  subdomains:'abcd', maxZoom:19
+}).addTo(map);
+
+const dots = L.layerGroup().addTo(map);
+let data = [];
+
+function sevColor(s) {
+  if (!s) return '#adb5bd';
+  const u = s.toUpperCase();
+  return u==='FELONY' ? '#c0392b' : u==='MISDEMEANOR' ? '#2980b9' : u==='VIOLATION' ? '#27ae60' : '#adb5bd';
+}
+
+function mkPopup(d) {
+  const date = d.cmplnt_fr_dt ? d.cmplnt_fr_dt.split('T')[0] : '—';
+  const sev  = (d.law_cat_cd||'UNKNOWN').toUpperCase();
+  return `
+    <div class="ph ${sev}">${d.ofns_desc||d.pd_desc||'Unknown Offense'}</div>
+    <div class="pb">
+      <div class="pr"><span class="k">Date</span><span class="v">${date}</span></div>
+      <div class="pr"><span class="k">Severity</span><span class="v">${d.law_cat_cd||'—'}</span></div>
+      <div class="pr"><span class="k">Borough</span><span class="v">${d.boro_nm||'—'}</span></div>
+      <div class="pr"><span class="k">Premises</span><span class="v">${d.prem_typ_desc||'—'}</span></div>
+      <div class="pr"><span class="k">Completed</span><span class="v">${d.crm_atpt_cptd_cd||'—'}</span></div>
+      <hr class="ps"/>
+      <div class="pr"><span class="k">Victim race</span><span class="v">${d.vic_race||'—'}</span></div>
+      <div class="pr"><span class="k">Victim sex</span><span class="v">${d.vic_sex||'—'}</span></div>
+      <div class="pr"><span class="k">Victim age</span><span class="v">${d.vic_age_group||'—'}</span></div>
+      <hr class="ps"/>
+      <div class="pr"><span class="k">Suspect race</span><span class="v">${d.susp_race||'—'}</span></div>
+      <div class="pr"><span class="k">Suspect sex</span><span class="v">${d.susp_sex||'—'}</span></div>
+      <div class="pr"><span class="k">Suspect age</span><span class="v">${d.susp_age_group||'—'}</span></div>
+    </div>`;
+}
+
+async function loadData() {
+  const boro  = document.getElementById('f-boro').value;
+  const sev   = document.getElementById('f-sev').value;
+  const vrace = document.getElementById('f-vrace').value;
+  const vsex  = document.getElementById('f-vsex').value;
+  const srace = document.getElementById('f-srace').value;
+  const ssex  = document.getElementById('f-ssex').value;
+  const yr1   = document.getElementById('f-yr1').value;
+  const yr2   = document.getElementById('f-yr2').value;
+  const kw    = document.getElementById('f-kw').value.trim();
+  const lim   = document.getElementById('f-lim').value;
+
+  const where = ['latitude IS NOT NULL','longitude IS NOT NULL'];
+  if (boro)  where.push(`boro_nm='${boro}'`);
+  if (sev)   where.push(`law_cat_cd='${sev}'`);
+  if (vrace) where.push(`vic_race='${vrace.replace(/'/g,"''")}'`);
+  if (vsex)  where.push(`vic_sex='${vsex}'`);
+  if (srace) where.push(`susp_race='${srace.replace(/'/g,"''")}'`);
+  if (ssex)  where.push(`susp_sex='${ssex}'`);
+  if (yr1)   where.push(`cmplnt_fr_dt>='${yr1}-01-01T00:00:00'`);
+  if (yr2)   where.push(`cmplnt_fr_dt<='${yr2}-12-31T23:59:59'`);
+  if (kw)    where.push(`upper(ofns_desc) like '%${kw.toUpperCase()}%'`);
+
+  const url = new URL('https://data.cityofnewyork.us/resource/qgea-i56i.json');
+  url.searchParams.set('$limit', lim);
+  url.searchParams.set('$order', 'cmplnt_fr_dt DESC');
+  url.searchParams.set('$select',
+    'cmplnt_num,boro_nm,cmplnt_fr_dt,law_cat_cd,ofns_desc,pd_desc,' +
+    'susp_age_group,susp_race,susp_sex,vic_age_group,vic_race,vic_sex,' +
+    'latitude,longitude,prem_typ_desc,crm_atpt_cptd_cd');
+  url.searchParams.set('$where', where.join(' AND '));
+
+  setLoad(true, 'Fetching NYPD data…');
+  document.getElementById('btn-run').disabled = true;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    data = await res.json();
+    renderMap(data);
+    renderStats(data);
+    renderList(data);
+    toast(`${data.length.toLocaleString()} complaints loaded`);
+  } catch(e) { toast('Error: '+e.message); }
+  finally { setLoad(false); document.getElementById('btn-run').disabled=false; }
+}
+
+function renderMap(rows) {
+  dots.clearLayers();
+  const bounds = [];
+  rows.forEach(d => {
+    const lat=+d.latitude, lng=+d.longitude;
+    if (isNaN(lat)||isNaN(lng)) return;
+    bounds.push([lat,lng]);
+    L.circleMarker([lat,lng],{
+      radius:5, fillColor:sevColor(d.law_cat_cd),
+      color:'#fff', weight:0.5, opacity:.8, fillOpacity:.7
+    }).bindPopup(mkPopup(d),{maxWidth:260}).addTo(dots);
+  });
+  if (bounds.length) map.fitBounds(bounds,{padding:[30,30]});
+}
+
+function renderStats(rows) {
+  const total = rows.length;
+  const fel   = rows.filter(d=>d.law_cat_cd==='FELONY').length;
+  const mis   = rows.filter(d=>d.law_cat_cd==='MISDEMEANOR').length;
+  document.getElementById('s-tot').textContent = total.toLocaleString();
+  document.getElementById('s-fel').textContent = fel.toLocaleString();
+  document.getElementById('s-mis').textContent = mis.toLocaleString();
+  document.getElementById('hcount').textContent = `${total.toLocaleString()} records`;
+}
+
+function renderList(rows) {
+  document.getElementById('ri-cnt').textContent = `(${rows.length.toLocaleString()})`;
+  document.getElementById('results-list').innerHTML = rows.slice(0,50).map((d,i) => {
+    const date = d.cmplnt_fr_dt ? d.cmplnt_fr_dt.split('T')[0] : '';
+    const sev  = d.law_cat_cd || '';
+    return `<div class="ri" onclick="flyTo(${i})">
+      <div class="ri-off">${d.ofns_desc||d.pd_desc||'Unknown'}</div>
+      <div class="ri-meta">
+        <span>${d.boro_nm||'—'}</span>
+        <span>${date}</span>
+        ${sev?`<span class="badge b-${sev}">${sev}</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function flyTo(i) {
+  const d=data[i]; if(!d) return;
+  const lat=+d.latitude, lng=+d.longitude;
+  if (!isNaN(lat)) map.flyTo([lat,lng],15,{duration:1});
+}
+
+const FIPS = {'BRONX':'005','BROOKLYN':'047','MANHATTAN':'061','QUEENS':'081','STATEN ISLAND':'085'};
+const CENSUS_KEY = 'd4cf2d4671ba8c6c51655d6bdd424255cafac07f';
+
+async function loadCensus() {
+  const boro = document.getElementById('f-boro').value;
+  const body = document.getElementById('cbody');
+  if (!boro) { body.innerHTML='<p class="cempty">Select a borough first.</p>'; return; }
+  body.innerHTML = '<p class="cempty">Loading…</p>';
+  const vars = 'B19013_001E,B01003_001E,B25001_001E,B17001_002E,B23025_005E,B23025_002E';
+  const url = `https://api.census.gov/data/2022/acs/acs5?get=NAME,${vars}&for=county:${FIPS[boro]}&in=state:36&key=${CENSUS_KEY}`;
+  try {
+    const raw = await (await fetch(url)).json();
+    const h=raw[0], v=raw[1];
+    const g=k=>+v[h.indexOf(k)];
+    const pop=g('B01003_001E'), inc=g('B19013_001E'), pov=g('B17001_002E'),
+          un=g('B23025_005E'), lf=g('B23025_002E'), units=g('B25001_001E');
+    body.innerHTML = `<table class="ctable">
+      <tr><td>Population</td><td>${pop.toLocaleString()}</td></tr>
+      <tr><td>Median income</td><td>${inc>0?'$'+inc.toLocaleString():'N/A'}</td></tr>
+      <tr><td>Poverty rate</td><td>${((pov/pop)*100).toFixed(1)}%</td></tr>
+      <tr><td>Unemployment</td><td>${((un/lf)*100).toFixed(1)}%</td></tr>
+      <tr><td>Housing units</td><td>${units.toLocaleString()}</td></tr>
+      <tr><td>Source</td><td>ACS 5-yr 2022</td></tr>
+    </table>`;
+  } catch(e) { body.innerHTML=`<p class="cempty" style="color:var(--felony)">Error: ${e.message}</p>`; }
+}
+
+function setLoad(on, msg) {
+  document.getElementById('loading').classList.toggle('on', on);
+  if (msg) document.getElementById('lmsg').textContent = msg;
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), 3000);
+}
+
+function resetFilters() {
+  ['f-boro','f-sev','f-vrace','f-vsex','f-srace','f-ssex'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('f-yr1').value='2023';
+  document.getElementById('f-yr2').value='2024';
+  document.getElementById('f-kw').value='';
+  document.getElementById('f-lim').value='1000';
+}
+</script>
+</body>
+</html>
